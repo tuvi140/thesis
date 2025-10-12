@@ -1,0 +1,11 @@
+dataset,CO2_Treatment,N_Level,Leaf_Area_mean_cm2,Leaf_Area_SE,Leaf_Area_group,SLA_mean_cm2_g,SLA_SE,SLA_group,A_ng_mean_umol_m2_s,A_ng_SE,A_ng_group,Vcmax_mean_umol_m2_s,Vcmax_SE,Vcmax_group,Jmax_mean_umol_m2_s,Jmax_SE,Jmax_group
+Table1,cCT,N1,88.8,6.3,f,206.5,7.3,c,13.6,1.2,b,50.8,3.4,c,124.3,11.5,c
+Table1,cCT,N2,348.8,45,e,242.5,11,bc,17.5,0.4,a,69.6,3,b,174.8,10.5,b
+Table1,cCT,N3,432.2,60.4,e,244.1,17.6,bc,20.1,0.2,a,75.8,2,ab,278.7,24.8,a
+Table1,cCT,N4,700.7,43.6,cd,265,12.6,ab,19.7,0.7,a,83,1.8,a,307.6,27.8,a
+Table1,cCT,N5,1072.2,83.1,b,284.9,9.5,a,19.5,0.5,a,78.6,2.1,ab,279.7,17,a
+Table2,cCT,N1,223.6,47.1,de,244,11.8,a,8.7,0.4,c,42.1,0.7,ab,117.7,3.5,bc
+Table2,cCT,N2,181.2,9,de,230.6,10,ab,8.7,0.5,c,35.6,2.5,cd,97.6,9.9,cd
+Table2,cCT,N3,404.6,47.2,bc,230.6,8.9,ab,11.3,0.8,bc,47.7,2.8,a,136.4,10.6,ab
+Table2,cCT,N4,314.2,24.7,cd,229.5,7.6,ab,9.4,0.8,bc,50.6,2,a,152.7,9.3,a
+Table2,cCT,N5,535.3,69.6,b,225.3,8,bc,12.9,1,b,48.6,3.5,a,160.5,16.8,a
