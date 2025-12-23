@@ -11,7 +11,6 @@ library(writexl)
 library(patchwork)
 library(stringr)
 
-## evan 2021
 evan_2021 <- read.csv("THESIS/evan 2021- root mass.csv") %>%
   select(fertilizer_cont, sla, tla, vcmax25, shade_cont, spp, narea) %>%
   mutate(
@@ -39,14 +38,12 @@ evan_2021 <- read.csv("THESIS/evan 2021- root mass.csv") %>%
     N_3 = N_2 / (pot * time)
   )
 
-
-## evan 2025 
 evan_2025 <- read.csv("THESIS/evan csv = data_sheets_NxCO2xI_compiled_datasheet.csv") %>%
   filter(inoc == "no.inoc") %>%
   select(n.trt, tla, vcmax25, co2) %>%
   mutate(
     study   = "evan2025",
-    species = "Soybean",        # already there, keep
+    species = "Soybean",
     vcmax   = vcmax25,
     pot     = 6,
     freq    = 2,
@@ -65,8 +62,7 @@ evan_2025 <- read.csv("THESIS/evan csv = data_sheets_NxCO2xI_compiled_datasheet.
     N_3 = N_2 / (pot * time)
   )
 
-## wang 2024 
-
+## wang 2024
 # wang_ppm <- c(
 #   `10`  = 0.14,
 #   `80`  = 1.12,
@@ -79,14 +75,14 @@ wang_2024 <- read.csv("THESIS/wang.csv") %>%
   select(
     nitrogen.ppm,
     CO2,
-    species,          
+    species,
     Vcmax,
     leaf.area.cm2.
   ) %>%
   mutate(
     study  = "wang2024",
     n.trt = as.numeric(wang_ppm[as.character(nitrogen.ppm)]),
-    #n.trt = as.numeric(nitrogen.ppm), # original: 10, 80, 150, 220, 290%%
+    # n.trt = as.numeric(nitrogen.ppm),
     tla    = leaf.area.cm2.,
     pot    = 3.5,
     time   = 8,
@@ -102,7 +98,6 @@ wang_2024 <- read.csv("THESIS/wang.csv") %>%
   ) %>%
   select(-co2) %>%
   filter(vcmax <= 500) %>%
-  # overwrite n.trt with ppm N
   mutate(
     n.trt = wang_ppm[as.character(n.trt)]
   ) %>%
@@ -112,9 +107,7 @@ wang_2024 <- read.csv("THESIS/wang.csv") %>%
     N_3 = N_2 / (pot * time)
   )
 
-## ---------------------------------
-## bind global groups
-## ---------------------------------
+##group 1: divide for plots
 
 vcmax_group <- bind_rows(
   evan_2021,
@@ -126,7 +119,7 @@ vcmax_group <- bind_rows(
     add.trt = as.character(add.trt),
     n.trt   = as.numeric(n.trt)
   ) %>%
-  select(study, n.trt, N_1, N_2, N_3, vcmax, tla, add.trt, species )
+  select(study, n.trt, N_1, N_2, N_3, vcmax, tla, add.trt, species)
 
 tla_group <- bind_rows(
   evan_2021,
@@ -140,9 +133,9 @@ tla_group <- bind_rows(
     add.trt = as.character(add.trt),
     n.trt   = as.numeric(n.trt)
   ) %>%
-  select(study, n.trt, N_1, N_2, N_3, tla, add.trt, species) 
+  select(study, n.trt, N_1, N_2, N_3, tla, add.trt, species)
 
-## standardize: key !
+
 
 treatment_levels <- c(
   "0% shade",
@@ -179,274 +172,258 @@ standardize_groups <- function(df) {
         str_detect(add.trt, regex("white birch",  ignore_case = TRUE)) ~ "White birch",
         str_detect(add.trt, regex("yellow birch", ignore_case = TRUE)) ~ "Yellow birch",
         str_detect(add.trt, regex("lettuce",      ignore_case = TRUE)) ~ "Lettuce",
-        TRUE ~ as.character(species)  
+        TRUE ~ as.character(species)
       ),
       treatment = factor(treatment, levels = treatment_levels),
       species   = factor(species,   levels = species_levels)
     )
 }
 
+
+### group 2: normalize and bind key parts 
+
 vcmax_group <- standardize_groups(vcmax_group)
 tla_group   <- standardize_groups(tla_group)
 
-## ACTUAL NORMALIZATION !!! ###
-
 vcmax_group <- vcmax_group %>%
   group_by(study, species) %>%
-  mutate(
-    vcnorm = vcmax / mean(vcmax, na.rm = TRUE)
-  ) %>%
+  mutate(vcnorm = vcmax / mean(vcmax, na.rm = TRUE)) %>%
   ungroup()
 
 tla_group <- tla_group %>%
   group_by(study, species) %>%
-  mutate(
-    tlanorm = tla / mean(tla, na.rm = TRUE)
-  ) %>%
+  mutate(tlanorm = tla / mean(tla, na.rm = TRUE)) %>%
   ungroup()
 
-## FIT FIRST## ---------------------------------
+## exponential fits with intercept I 
 
-# VCMAX exponential fits
+I_start <- 0.5
+
 vcm_ppm <- nlsLM(
-  vcnorm ~ A * (1 - exp(-k * n.trt)),
+  vcnorm ~ I + A * (1 - exp(-k * n.trt)),
   data   = vcmax_group,
-  start  = list(A = max(vcmax_group$vcnorm, na.rm = TRUE), k = 0.01),
+  start  = list(I = I_start, A = max(vcmax_group$vcnorm, na.rm = TRUE) - I_start, k = 0.01),
   control = nls.lm.control(maxiter = 200)
 )
 
 vcm_n1 <- nlsLM(
-  vcnorm ~ A * (1 - exp(-k * N_1)),
+  vcnorm ~ I + A * (1 - exp(-k * N_1)),
   data   = vcmax_group,
-  start  = list(A = max(vcmax_group$vcnorm, na.rm = TRUE), k = 0.01),
+  start  = list(I = I_start, A = max(vcmax_group$vcnorm, na.rm = TRUE) - I_start, k = 0.01),
   control = nls.lm.control(maxiter = 200)
 )
 
 vcm_n2 <- nlsLM(
-  vcnorm ~ A * (1 - exp(-k * N_2)),
+  vcnorm ~ I + A * (1 - exp(-k * N_2)),
   data   = vcmax_group,
-  start  = list(A = max(vcmax_group$vcnorm, na.rm = TRUE), k = 0.01),
+  start  = list(I = I_start, A = max(vcmax_group$vcnorm, na.rm = TRUE) - I_start, k = 0.01),
   control = nls.lm.control(maxiter = 200)
 )
 
 vcm_n3 <- nlsLM(
-  vcnorm ~ A * (1 - exp(-k * N_3)),
+  vcnorm ~ I + A * (1 - exp(-k * N_3)),
   data   = vcmax_group,
-  start  = list(A = max(vcmax_group$vcnorm, na.rm = TRUE), k = 0.01),
+  start  = list(I = I_start, A = max(vcmax_group$vcnorm, na.rm = TRUE) - I_start, k = 0.01),
   control = nls.lm.control(maxiter = 200)
 )
 
-# TLA exponential fits
 tla_ppm <- nlsLM(
-  tlanorm ~ A * (1 - exp(-k * n.trt)),
+  tlanorm ~ I + A * (1 - exp(-k * n.trt)),
   data   = tla_group,
-  start  = list(A = max(tla_group$tlanorm, na.rm = TRUE), k = 0.01),
+  start  = list(I = I_start, A = max(tla_group$tlanorm, na.rm = TRUE) - I_start, k = 0.01),
   control = nls.lm.control(maxiter = 200)
 )
 
 tla_n1 <- nlsLM(
-  tlanorm ~ A * (1 - exp(-k * N_1)),
+  tlanorm ~ I + A * (1 - exp(-k * N_1)),
   data   = tla_group,
-  start  = list(A = max(tla_group$tlanorm, na.rm = TRUE), k = 0.01),
+  start  = list(I = I_start, A = max(tla_group$tlanorm, na.rm = TRUE) - I_start, k = 0.01),
   control = nls.lm.control(maxiter = 200)
 )
 
 tla_n2 <- nlsLM(
-  tlanorm ~ A * (1 - exp(-k * N_2)),
+  tlanorm ~ I + A * (1 - exp(-k * N_2)),
   data   = tla_group,
-  start  = list(A = max(tla_group$tlanorm, na.rm = TRUE), k = 0.01),
+  start  = list(I = I_start, A = max(tla_group$tlanorm, na.rm = TRUE) - I_start, k = 0.01),
   control = nls.lm.control(maxiter = 200)
 )
 
 tla_n3 <- nlsLM(
-  tlanorm ~ A * (1 - exp(-k * N_3)),
+  tlanorm ~ I + A * (1 - exp(-k * N_3)),
   data   = tla_group,
-  start  = list(A = max(tla_group$tlanorm, na.rm = TRUE), k = 0.01),
+  start  = list(I = I_start, A = max(tla_group$tlanorm, na.rm = TRUE) - I_start, k = 0.01),
   control = nls.lm.control(maxiter = 200)
 )
 
-## set parameters
-## ---------------------------------
+## parameters per n and plot 
+pars_vcm_ppm <- coef(vcm_ppm); I_vcm_ppm <- pars_vcm_ppm["I"]; A_vcm_ppm <- pars_vcm_ppm["A"]; k_vcm_ppm <- pars_vcm_ppm["k"]
+pars_vcm_n1  <- coef(vcm_n1);  I_vcm_n1  <- pars_vcm_n1["I"];  A_vcm_n1  <- pars_vcm_n1["A"];  k_vcm_n1  <- pars_vcm_n1["k"]
+pars_vcm_n2  <- coef(vcm_n2);  I_vcm_n2  <- pars_vcm_n2["I"];  A_vcm_n2  <- pars_vcm_n2["A"];  k_vcm_n2  <- pars_vcm_n2["k"]
+pars_vcm_n3  <- coef(vcm_n3);  I_vcm_n3  <- pars_vcm_n3["I"];  A_vcm_n3  <- pars_vcm_n3["A"];  k_vcm_n3  <- pars_vcm_n3["k"]
 
-# vcmax parameters
-pars_vcm_ppm <- coef(vcm_ppm); A_vcm_ppm <- pars_vcm_ppm["A"]; k_vcm_ppm <- pars_vcm_ppm["k"]
-pars_vcm_n1  <- coef(vcm_n1);  A_vcm_n1  <- pars_vcm_n1["A"];  k_vcm_n1  <- pars_vcm_n1["k"]
-pars_vcm_n2  <- coef(vcm_n2);  A_vcm_n2  <- pars_vcm_n2["A"];  k_vcm_n2  <- pars_vcm_n2["k"]
-pars_vcm_n3  <- coef(vcm_n3);  A_vcm_n3  <- pars_vcm_n3["A"];  k_vcm_n3  <- pars_vcm_n3["k"]
+pars_tla_ppm <- coef(tla_ppm); I_tla_ppm <- pars_tla_ppm["I"]; A_tla_ppm <- pars_tla_ppm["A"]; k_tla_ppm <- pars_tla_ppm["k"]
+pars_tla_n1  <- coef(tla_n1);  I_tla_n1  <- pars_tla_n1["I"];  A_tla_n1  <- pars_tla_n1["A"];  k_tla_n1  <- pars_tla_n1["k"]
+pars_tla_n2  <- coef(tla_n2);  I_tla_n2  <- pars_tla_n2["I"];  A_tla_n2  <- pars_tla_n2["A"];  k_tla_n2  <- pars_tla_n2["k"]
+pars_tla_n3  <- coef(tla_n3);  I_tla_n3  <- pars_tla_n3["I"];  A_tla_n3  <- pars_tla_n3["A"];  k_tla_n3  <- pars_tla_n3["k"]
 
-# tla parameters
-pars_tla_ppm <- coef(tla_ppm); A_tla_ppm <- pars_tla_ppm["A"]; k_tla_ppm <- pars_tla_ppm["k"]
-pars_tla_n1  <- coef(tla_n1);  A_tla_n1  <- pars_tla_n1["A"];  k_tla_n1  <- pars_tla_n1["k"]
-pars_tla_n2  <- coef(tla_n2);  A_tla_n2  <- pars_tla_n2["A"];  k_tla_n2  <- pars_tla_n2["k"]
-pars_tla_n3  <- coef(tla_n3);  A_tla_n3  <- pars_tla_n3["A"];  k_tla_n3  <- pars_tla_n3["k"]
-
-##  y-intercept to minimum normalized values (global) ----   ###### 
-
-min_vcnorm  <- min(vcmax_group$vcnorm,  na.rm = TRUE)
-min_tlanorm <- min(tla_group$tlanorm,   na.rm = TRUE)
-
-## slope when flat !!!!!
-N_flat_from_k <- function(k) {
-  -log(0.05) / k        # 95% of asymptote
+r2_nls <- function(model, data, y_col) {
+  y <- data[[y_col]]
+  yhat <- predict(model, newdata = data)
+  rss <- sum((y - yhat)^2, na.rm = TRUE)
+  tss <- sum((y - mean(y, na.rm = TRUE))^2, na.rm = TRUE)
+  1 - rss / tss
 }
 
-diminishing_table <- tibble(
+## table of 8 exponential fits: A, I, k, r^2
+
+exp_fits_table <- tibble(
   response = c(rep("Vcmax", 4), rep("TLA", 4)),
   N_metric = rep(c("ppm", "N1", "N2", "N3"), 2),
-  A = c(A_vcm_ppm, A_vcm_n1, A_vcm_n2, A_vcm_n3,
-        A_tla_ppm, A_tla_n1, A_tla_n2, A_tla_n3),
-  k = c(k_vcm_ppm, k_vcm_n1, k_vcm_n2, k_vcm_n3,
-        k_tla_ppm, k_tla_n1, k_tla_n2, k_tla_n3)
-) %>%
+  A  = c(A_vcm_ppm, A_vcm_n1, A_vcm_n2, A_vcm_n3, A_tla_ppm, A_tla_n1, A_tla_n2, A_tla_n3),
+  I  = c(I_vcm_ppm, I_vcm_n1, I_vcm_n2, I_vcm_n3, I_tla_ppm, I_tla_n1, I_tla_n2, I_tla_n3),
+  k  = c(k_vcm_ppm, k_vcm_n1, k_vcm_n2, k_vcm_n3, k_tla_ppm, k_tla_n1, k_tla_n2, k_tla_n3),
+  r2 = c(
+    r2_nls(vcm_ppm, vcmax_group, "vcnorm"),
+    r2_nls(vcm_n1,  vcmax_group, "vcnorm"),
+    r2_nls(vcm_n2,  vcmax_group, "vcnorm"),
+    r2_nls(vcm_n3,  vcmax_group, "vcnorm"),
+    r2_nls(tla_ppm, tla_group,   "tlanorm"),
+    r2_nls(tla_n1,  tla_group,   "tlanorm"),
+    r2_nls(tla_n2,  tla_group,   "tlanorm"),
+    r2_nls(tla_n3,  tla_group,   "tlanorm")
+  )
+)
+
+print(exp_fits_table)
+
+## 95% asymptote point 
+N_flat_from_k <- function(k) {
+  -log(0.05) / k
+}
+
+diminishing_table <- exp_fits_table %>%
   mutate(
     N_flat        = N_flat_from_k(k),
-    y_at_flat     = A * (1 - exp(-k * N_flat)),
+    y_at_flat     = I + A * (1 - exp(-k * N_flat)),
     slope_at_flat = A * k * exp(-k * N_flat)
   )
 
 print(diminishing_table)
-# write_xlsx(diminishing_table, "diminishing_points.xlsx")
+write_xlsx(exp_fits_table, "AIKRtable.xlsx")
+write_xlsx(diminishing_table, "ASYMPTOTE.xlsx")
 
-
-## GRID = equation
+## grids ##############################
 grid_vcm_ppm <- tibble(
   n.trt = seq(min(vcmax_group$n.trt, na.rm = TRUE),
               max(vcmax_group$n.trt, na.rm = TRUE),
               length.out = 200)
 ) %>%
-  mutate(vcnorm_hat = min_vcnorm + A_vcm_ppm * (1 - exp(-k_vcm_ppm * n.trt)))
+  mutate(vcnorm_hat = I_vcm_ppm + A_vcm_ppm * (1 - exp(-k_vcm_ppm * n.trt)))
 
 grid_vcm_N1 <- tibble(
   N_1 = seq(min(vcmax_group$N_1, na.rm = TRUE),
             max(vcmax_group$N_1, na.rm = TRUE),
             length.out = 200)
 ) %>%
-  mutate(vcnorm_hat = min_vcnorm + A_vcm_n1 * (1 - exp(-k_vcm_n1 * N_1)))
+  mutate(vcnorm_hat = I_vcm_n1 + A_vcm_n1 * (1 - exp(-k_vcm_n1 * N_1)))
 
 grid_vcm_N2 <- tibble(
   N_2 = seq(min(vcmax_group$N_2, na.rm = TRUE),
             max(vcmax_group$N_2, na.rm = TRUE),
             length.out = 200)
 ) %>%
-  mutate(vcnorm_hat = min_vcnorm + A_vcm_n2 * (1 - exp(-k_vcm_n2 * N_2)))
+  mutate(vcnorm_hat = I_vcm_n2 + A_vcm_n2 * (1 - exp(-k_vcm_n2 * N_2)))
 
 grid_vcm_N3 <- tibble(
   N_3 = seq(min(vcmax_group$N_3, na.rm = TRUE),
             max(vcmax_group$N_3, na.rm = TRUE),
             length.out = 200)
 ) %>%
-  mutate(vcnorm_hat = min_vcnorm + A_vcm_n3 * (1 - exp(-k_vcm_n3 * N_3)))
+  mutate(vcnorm_hat = I_vcm_n3 + A_vcm_n3 * (1 - exp(-k_vcm_n3 * N_3)))
 
 grid_tla_ppm <- tibble(
   n.trt = seq(min(tla_group$n.trt, na.rm = TRUE),
               max(tla_group$n.trt, na.rm = TRUE),
               length.out = 200)
 ) %>%
-  mutate(tlanorm_hat = min_tlanorm + A_tla_ppm * (1 - exp(-k_tla_ppm * n.trt)))
+  mutate(tlanorm_hat = I_tla_ppm + A_tla_ppm * (1 - exp(-k_tla_ppm * n.trt)))
 
 grid_tla_N1 <- tibble(
   N_1 = seq(min(tla_group$N_1, na.rm = TRUE),
             max(tla_group$N_1, na.rm = TRUE),
             length.out = 200)
 ) %>%
-  mutate(tlanorm_hat = min_tlanorm + A_tla_n1 * (1 - exp(-k_tla_n1 * N_1)))
+  mutate(tlanorm_hat = I_tla_n1 + A_tla_n1 * (1 - exp(-k_tla_n1 * N_1)))
 
 grid_tla_N2 <- tibble(
   N_2 = seq(min(tla_group$N_2, na.rm = TRUE),
             max(tla_group$N_2, na.rm = TRUE),
             length.out = 200)
 ) %>%
-  mutate(tlanorm_hat = min_tlanorm + A_tla_n2 * (1 - exp(-k_tla_n2 * N_2)))
+  mutate(tlanorm_hat = I_tla_n2 + A_tla_n2 * (1 - exp(-k_tla_n2 * N_2)))
 
 grid_tla_N3 <- tibble(
   N_3 = seq(min(tla_group$N_3, na.rm = TRUE),
             max(tla_group$N_3, na.rm = TRUE),
             length.out = 200)
 ) %>%
-  mutate(tlanorm_hat = min_tlanorm + A_tla_n3 * (1 - exp(-k_tla_n3 * N_3)))
+  mutate(tlanorm_hat = I_tla_n3 + A_tla_n3 * (1 - exp(-k_tla_n3 * N_3)))
 
-
-## PLOT IN , with KEY
-## ---------------------------------
-
+## plots (exponential)
 p_vcm_ppm <- ggplot(vcmax_group, aes(x = n.trt, y = vcnorm)) +
   geom_point(aes(color = treatment, shape = species), size = 2, alpha = 0.7) +
-  geom_line(data = grid_vcm_ppm,
-            aes(x = n.trt, y = vcnorm_hat),
-            linewidth = 1, inherit.aes = FALSE) +
+  geom_line(data = grid_vcm_ppm, aes(x = n.trt, y = vcnorm_hat), linewidth = 1, inherit.aes = FALSE) +
   scale_color_discrete(drop = FALSE) +
-  labs(title = "Vcmax per Nitrogen (ppm)",
-       x = "Nitrogen (ppm)", y = "Normalized Vcmax") +
+  labs(title = "Vcmax per Nitrogen (ppm)", x = "Nitrogen (ppm)", y = "Normalized Vcmax") +
   theme_classic()
 
 p_vcm_N1 <- ggplot(vcmax_group, aes(x = N_1, y = vcnorm)) +
   geom_point(aes(color = treatment, shape = species), size = 2, alpha = 0.7) +
-  geom_line(data = grid_vcm_N1,
-            aes(x = N_1, y = vcnorm_hat),
-            linewidth = 1, inherit.aes = FALSE) +
+  geom_line(data = grid_vcm_N1, aes(x = N_1, y = vcnorm_hat), linewidth = 1, inherit.aes = FALSE) +
   scale_color_discrete(drop = FALSE) +
-  labs(title = "Vcmax per Instantaneous mg N",
-       x = "Instantaneous mg N (N1)", y = "Normalized Vcmax") +
+  labs(title = "Vcmax per Instantaneous mg N", x = "Instantaneous mg N (N1)", y = "Normalized Vcmax") +
   theme_classic()
 
 p_vcm_N2 <- ggplot(vcmax_group, aes(x = N_2, y = vcnorm)) +
   geom_point(aes(color = treatment, shape = species), size = 2, alpha = 0.7) +
-  geom_line(data = grid_vcm_N2,
-            aes(x = N_2, y = vcnorm_hat),
-            linewidth = 1, inherit.aes = FALSE) +
+  geom_line(data = grid_vcm_N2, aes(x = N_2, y = vcnorm_hat), linewidth = 1, inherit.aes = FALSE) +
   scale_color_discrete(drop = FALSE) +
-  labs(title = "Vcmax per Cumulative mg N",
-       x = "Cumulative mg N (N2)", y = "Normalized Vcmax") +
+  labs(title = "Vcmax per Cumulative mg N", x = "Cumulative mg N (N2)", y = "Normalized Vcmax") +
   theme_classic()
 
 p_vcm_N3 <- ggplot(vcmax_group, aes(x = N_3, y = vcnorm)) +
   geom_point(aes(color = treatment, shape = species), size = 2, alpha = 0.7) +
-  geom_line(data = grid_vcm_N3,
-            aes(x = N_3, y = vcnorm_hat),
-            linewidth = 1, inherit.aes = FALSE) +
+  geom_line(data = grid_vcm_N3, aes(x = N_3, y = vcnorm_hat), linewidth = 1, inherit.aes = FALSE) +
   scale_color_discrete(drop = FALSE) +
-  labs(title = "Vcmax per mg N / L * Week",
-       x = "mg N / L * Week (N3)", y = "Normalized Vcmax") +
+  labs(title = "Vcmax per mg N / L * Week", x = "mg N / L * Week (N3)", y = "Normalized Vcmax") +
   theme_classic()
 
 p_tla_ppm <- ggplot(tla_group, aes(x = n.trt, y = tlanorm)) +
   geom_point(aes(color = treatment, shape = species), size = 2, alpha = 0.7) +
-  geom_line(data = grid_tla_ppm,
-            aes(x = n.trt, y = tlanorm_hat),
-            linewidth = 1, inherit.aes = FALSE) +
+  geom_line(data = grid_tla_ppm, aes(x = n.trt, y = tlanorm_hat), linewidth = 1, inherit.aes = FALSE) +
   scale_color_discrete(drop = FALSE) +
-  labs(title = "TLA per Nitrogen (ppm)",
-       x = "Nitrogen (ppm)", y = "Normalized TLA") +
+  labs(title = "TLA per Nitrogen (ppm)", x = "Nitrogen (ppm)", y = "Normalized TLA") +
   theme_classic()
 
 p_tla_N1 <- ggplot(tla_group, aes(x = N_1, y = tlanorm)) +
   geom_point(aes(color = treatment, shape = species), size = 2, alpha = 0.7) +
-  geom_line(data = grid_tla_N1,
-            aes(x = N_1, y = tlanorm_hat),
-            linewidth = 1, inherit.aes = FALSE) +
+  geom_line(data = grid_tla_N1, aes(x = N_1, y = tlanorm_hat), linewidth = 1, inherit.aes = FALSE) +
   scale_color_discrete(drop = FALSE) +
-  labs(title = "TLA per Instantaneous mg N",
-       x = "Instantaneous mg N (N1)", y = "Normalized TLA") +
+  labs(title = "TLA per Instantaneous mg N", x = "Instantaneous mg N (N1)", y = "Normalized TLA") +
   theme_classic()
 
 p_tla_N2 <- ggplot(tla_group, aes(x = N_2, y = tlanorm)) +
   geom_point(aes(color = treatment, shape = species), size = 2, alpha = 0.7) +
-  geom_line(data = grid_tla_N2,
-            aes(x = N_2, y = tlanorm_hat),
-            linewidth = 1, inherit.aes = FALSE) +
+  geom_line(data = grid_tla_N2, aes(x = N_2, y = tlanorm_hat), linewidth = 1, inherit.aes = FALSE) +
   scale_color_discrete(drop = FALSE) +
-  labs(title = "TLA per Cumulative mg N",
-       x = "Cumulative mg N (N2)", y = "Normalized TLA") +
+  labs(title = "TLA per Cumulative mg N", x = "Cumulative mg N (N2)", y = "Normalized TLA") +
   theme_classic()
 
 p_tla_N3 <- ggplot(tla_group, aes(x = N_3, y = tlanorm)) +
   geom_point(aes(color = treatment, shape = species), size = 2, alpha = 0.7) +
-  geom_line(data = grid_tla_N3,
-            aes(x = N_3, y = tlanorm_hat),
-            linewidth = 1, inherit.aes = FALSE) +
+  geom_line(data = grid_tla_N3, aes(x = N_3, y = tlanorm_hat), linewidth = 1, inherit.aes = FALSE) +
   scale_color_discrete(drop = FALSE) +
-  labs(title = "TLA per mg N / L * Week",
-       x = "mg N / L * Week (N3)", y = "Normalized TLA") +
+  labs(title = "TLA per mg N / L * Week", x = "mg N / L * Week (N3)", y = "Normalized TLA") +
   theme_classic()
 
 exp_panel <- (p_vcm_ppm | p_vcm_N1 | p_vcm_N2 | p_vcm_N3) /
@@ -456,9 +433,7 @@ exp_panel <- (p_vcm_ppm | p_vcm_N1 | p_vcm_N2 | p_vcm_N3) /
 
 exp_panel
 
-
-## Linear regression!
-
+## linear regression
 lm_vcm_ppm <- lm(vcnorm ~ n.trt, data = vcmax_group)
 lm_vcm_N1  <- lm(vcnorm ~ N_1,   data = vcmax_group)
 lm_vcm_N2  <- lm(vcnorm ~ N_2,   data = vcmax_group)
@@ -470,33 +445,25 @@ lm_tla_N2  <- lm(tlanorm ~ N_2,   data = tla_group)
 lm_tla_N3  <- lm(tlanorm ~ N_3,   data = tla_group)
 
 slopes_table <- bind_rows(
-  tidy(lm_vcm_ppm) %>% filter(term == "n.trt") %>% mutate(response="Vcmax", N_metric="ppm"),
-  tidy(lm_vcm_N1 ) %>% filter(term == "N_1")   %>% mutate(response="Vcmax", N_metric="N1"),
-  tidy(lm_vcm_N2 ) %>% filter(term == "N_2")   %>% mutate(response="Vcmax", N_metric="N2"),
-  tidy(lm_vcm_N3 ) %>% filter(term == "N_3")   %>% mutate(response="Vcmax", N_metric="N3"),
-  tidy(lm_tla_ppm) %>% filter(term == "n.trt") %>% mutate(response="TLA",   N_metric="ppm"),
-  tidy(lm_tla_N1 ) %>% filter(term == "N_1")   %>% mutate(response="TLA",   N_metric="N1"),
-  tidy(lm_tla_N2 ) %>% filter(term == "N_2")   %>% mutate(response="TLA",   N_metric="N2"),
-  tidy(lm_tla_N3 ) %>% filter(term == "N_3")   %>% mutate(response="TLA",   N_metric="N3")
+  tidy(lm_vcm_ppm) %>% filter(term == "n.trt") %>% mutate(response = "Vcmax", N_metric = "ppm"),
+  tidy(lm_vcm_N1 ) %>% filter(term == "N_1")   %>% mutate(response = "Vcmax", N_metric = "N1"),
+  tidy(lm_vcm_N2 ) %>% filter(term == "N_2")   %>% mutate(response = "Vcmax", N_metric = "N2"),
+  tidy(lm_vcm_N3 ) %>% filter(term == "N_3")   %>% mutate(response = "Vcmax", N_metric = "N3"),
+  tidy(lm_tla_ppm) %>% filter(term == "n.trt") %>% mutate(response = "TLA",   N_metric = "ppm"),
+  tidy(lm_tla_N1 ) %>% filter(term == "N_1")   %>% mutate(response = "TLA",   N_metric = "N1"),
+  tidy(lm_tla_N2 ) %>% filter(term == "N_2")   %>% mutate(response = "TLA",   N_metric = "N2"),
+  tidy(lm_tla_N3 ) %>% filter(term == "N_3")   %>% mutate(response = "TLA",   N_metric = "N3")
 )
 
 print(slopes_table)
 # write_xlsx(slopes_table, "linear_slopes.xlsx")
 
-
-## EQUATION LABEL in-plot = helper
 eq_label <- function(model, x_name = "N") {
   cf <- coef(model)
   a  <- cf[1]
   b  <- cf[2]
-  paste0(
-    "y = ", round(a, 2),
-    " + ", round(b, 4), " * ", x_name
-  )
+  paste0("y = ", round(a, 2), " + ", round(b, 4), " * ", x_name)
 }
-
-
-## 8-panel view 
 
 p_vcm_ppm_lin <- ggplot(vcmax_group, aes(x = n.trt, y = vcnorm)) +
   geom_point(aes(color = treatment, shape = species), size = 2, alpha = 0.7) +
@@ -504,8 +471,7 @@ p_vcm_ppm_lin <- ggplot(vcmax_group, aes(x = n.trt, y = vcnorm)) +
   scale_color_discrete(drop = FALSE) +
   annotate("text", x = Inf, y = Inf, label = eq_label(lm_vcm_ppm, "ppm"),
            hjust = 1.1, vjust = 1.5, size = 3) +
-  labs(title = "Vcmax per Nitrogen (ppm)",
-       x = "Nitrogen (ppm)", y = "Normalized Vcmax") +
+  labs(title = "Vcmax per Nitrogen (ppm)", x = "Nitrogen (ppm)", y = "Normalized Vcmax") +
   theme_classic()
 
 p_vcm_N1_lin <- ggplot(vcmax_group, aes(x = N_1, y = vcnorm)) +
@@ -514,8 +480,7 @@ p_vcm_N1_lin <- ggplot(vcmax_group, aes(x = N_1, y = vcnorm)) +
   scale_color_discrete(drop = FALSE) +
   annotate("text", x = Inf, y = Inf, label = eq_label(lm_vcm_N1, "N1"),
            hjust = 1.1, vjust = 1.5, size = 3) +
-  labs(title = "Vcmax per Instantaneous mg N",
-       x = "Instantaneous mg N (N1)", y = "Normalized Vcmax") +
+  labs(title = "Vcmax per Instantaneous mg N", x = "Instantaneous mg N (N1)", y = "Normalized Vcmax") +
   theme_classic()
 
 p_vcm_N2_lin <- ggplot(vcmax_group, aes(x = N_2, y = vcnorm)) +
@@ -524,8 +489,7 @@ p_vcm_N2_lin <- ggplot(vcmax_group, aes(x = N_2, y = vcnorm)) +
   scale_color_discrete(drop = FALSE) +
   annotate("text", x = Inf, y = Inf, label = eq_label(lm_vcm_N2, "N2"),
            hjust = 1.1, vjust = 1.5, size = 3) +
-  labs(title = "Vcmax per Cumulative mg N",
-       x = "Cumulative mg N (N2)", y = "Normalized Vcmax") +
+  labs(title = "Vcmax per Cumulative mg N", x = "Cumulative mg N (N2)", y = "Normalized Vcmax") +
   theme_classic()
 
 p_vcm_N3_lin <- ggplot(vcmax_group, aes(x = N_3, y = vcnorm)) +
@@ -534,8 +498,7 @@ p_vcm_N3_lin <- ggplot(vcmax_group, aes(x = N_3, y = vcnorm)) +
   scale_color_discrete(drop = FALSE) +
   annotate("text", x = Inf, y = Inf, label = eq_label(lm_vcm_N3, "N3"),
            hjust = 1.1, vjust = 1.5, size = 3) +
-  labs(title = "Vcmax per mg N / L * Week",
-       x = "mg N / L * Week (N3)", y = "Normalized Vcmax") +
+  labs(title = "Vcmax per mg N / L * Week", x = "mg N / L * Week (N3)", y = "Normalized Vcmax") +
   theme_classic()
 
 p_tla_ppm_lin <- ggplot(tla_group, aes(x = n.trt, y = tlanorm)) +
@@ -544,8 +507,7 @@ p_tla_ppm_lin <- ggplot(tla_group, aes(x = n.trt, y = tlanorm)) +
   scale_color_discrete(drop = FALSE) +
   annotate("text", x = Inf, y = Inf, label = eq_label(lm_tla_ppm, "ppm"),
            hjust = 1.1, vjust = 1.5, size = 3) +
-  labs(title = "TLA per Nitrogen (ppm)",
-       x = "Nitrogen (ppm)", y = "Normalized TLA") +
+  labs(title = "TLA per Nitrogen (ppm)", x = "Nitrogen (ppm)", y = "Normalized TLA") +
   theme_classic()
 
 p_tla_N1_lin <- ggplot(tla_group, aes(x = N_1, y = tlanorm)) +
@@ -554,8 +516,7 @@ p_tla_N1_lin <- ggplot(tla_group, aes(x = N_1, y = tlanorm)) +
   scale_color_discrete(drop = FALSE) +
   annotate("text", x = Inf, y = Inf, label = eq_label(lm_tla_N1, "N1"),
            hjust = 1.1, vjust = 1.5, size = 3) +
-  labs(title = "TLA per Instantaneous mg N",
-       x = "Instantaneous mg N (N1)", y = "Normalized TLA") +
+  labs(title = "TLA per Instantaneous mg N", x = "Instantaneous mg N (N1)", y = "Normalized TLA") +
   theme_classic()
 
 p_tla_N2_lin <- ggplot(tla_group, aes(x = N_2, y = tlanorm)) +
@@ -564,8 +525,7 @@ p_tla_N2_lin <- ggplot(tla_group, aes(x = N_2, y = tlanorm)) +
   scale_color_discrete(drop = FALSE) +
   annotate("text", x = Inf, y = Inf, label = eq_label(lm_tla_N2, "N2"),
            hjust = 1.1, vjust = 1.5, size = 3) +
-  labs(title = "TLA per Cumulative mg N",
-       x = "Cumulative mg N (N2)", y = "Normalized TLA") +
+  labs(title = "TLA per Cumulative mg N", x = "Cumulative mg N (N2)", y = "Normalized TLA") +
   theme_classic()
 
 p_tla_N3_lin <- ggplot(tla_group, aes(x = N_3, y = tlanorm)) +
@@ -574,8 +534,7 @@ p_tla_N3_lin <- ggplot(tla_group, aes(x = N_3, y = tlanorm)) +
   scale_color_discrete(drop = FALSE) +
   annotate("text", x = Inf, y = Inf, label = eq_label(lm_tla_N3, "N3"),
            hjust = 1.1, vjust = 1.5, size = 3) +
-  labs(title = "TLA per mg N / L * Week",
-       x = "mg N / L * Week (N3)", y = "Normalized TLA") +
+  labs(title = "TLA per mg N / L * Week", x = "mg N / L * Week (N3)", y = "Normalized TLA") +
   theme_classic()
 
 lin_panel <- (p_vcm_ppm_lin | p_vcm_N1_lin | p_vcm_N2_lin | p_vcm_N3_lin) /
@@ -584,4 +543,3 @@ lin_panel <- (p_vcm_ppm_lin | p_vcm_N1_lin | p_vcm_N2_lin | p_vcm_N3_lin) /
   theme(legend.position = "bottom")
 
 lin_panel
-
